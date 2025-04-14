@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Click Game with Leaderboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f0f0f0;
+    }
+    #game {
+      margin: 50px auto;
+      background: #fff;
+      padding: 20px;
+      width: 300px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      border-radius: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    #leaderboard {
+      margin-top: 20px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <h1>Click Game</h1>
+    <p>Score: <span id="score">0</span></p>
+    <button onclick="increaseScore()">Click Me!</button>
+    <br><br>
+    <input id="playerName" placeholder="Your name" />
+    <button onclick="submitScore()">Submit Score</button>
+
+    <div id="leaderboard">
+      <h2>Leaderboard</h2>
+      <ol id="board"></ol>
+    </div>
+  </div>
+
+  <script>
+    let score = 0;
+    let leaderboard = JSON.parse(localStorage.getItem('leaderboard')) || [];
+
+    function increaseScore() {
+      score++;
+      document.getElementById("score").innerText = score;
+    }
+
+    function submitScore() {
+      const name = document.getElementById("playerName").value;
+      if (!name) return alert("Please enter your name");
+      leaderboard.push({ name, score });
+      leaderboard.sort((a, b) => b.score - a.score);
+      leaderboard = leaderboard.slice(0, 10); // top 10 only
+      localStorage.setItem('leaderboard', JSON.stringify(leaderboard));
+      renderLeaderboard();
+      score = 0;
+      document.getElementById("score").innerText = score;
+      document.getElementById("playerName").value = '';
+    }
+
+    function renderLeaderboard() {
+      const board = document.getElementById("board");
+      board.innerHTML = '';
+      leaderboard.forEach(entry => {
+        const li = document.createElement("li");
+        li.textContent = `${entry.name}: ${entry.score}`;
+        board.appendChild(li);
+      });
+    }
+
+    renderLeaderboard();
+  </script>
+</body>
+</html>
