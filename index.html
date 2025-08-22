@@ -1,80 +1,637 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Click Game with Leaderboard</title>
+  <meta charset="utf-8" />
+  <title>KAUST Pins — Lost Cats & Danger</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #f0f0f0;
+    :root {
+      --bg:#0f1115; --bg-elev:#161a22; --fg:#d7dce2; --muted:#9aa3ad;
+      --accent:#7aa2f7; --danger:#ef5350; --cat:#f1a33c; --border:#232839;
     }
-    #game {
-      margin: 50px auto;
-      background: #fff;
-      padding: 20px;
-      width: 300px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-      border-radius: 10px;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-    }
-    #leaderboard {
-      margin-top: 20px;
-      text-align: left;
-    }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Tenorite,Arial,sans-serif;}
+    #app{display:grid;grid-template-columns:360px 1fr;grid-template-rows:100vh}
+    #sidebar{background:var(--bg-elev);border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:320px}
+    .brand{padding:14px 16px;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+    .brand .who{font-size:12px;color:var(--muted)}
+    .controls{padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto;gap:8px}
+    .controls input[type="text"]{background:#111521;border:1px solid var(--border);color:var(--fg);padding:10px;border-radius:8px}
+    .controls .row{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    button,label.btn{background:#171d2b;border:1px solid var(--border);color:var(--fg);padding:9px 12px;border-radius:8px;cursor:pointer;font-size:14px}
+    button:hover,label.btn:hover{border-color:#2d3652}
+    button.primary{background:#1a2744;border-color:#243154}
+    button.danger{border-color:#4a2626;background:#2b1414;color:#ffb3b3}
+    #locationList{list-style:none;padding:0;margin:0;overflow:auto;flex:1}
+    .loc{border-bottom:1px solid var(--border);padding:10px 12px;display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center}
+    .loc .title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .loc .meta{color:var(--muted);font-size:12px}
+    .loc .actions{display:flex;gap:6px}
+    .badge{font-size:11px;padding:2px 8px;border-radius:999px;margin-left:8px}
+    .badge.cat{background:rgba(241,163,60,.15);color:#ffd49a;border:1px solid rgba(241,163,60,.35)}
+    .badge.danger{background:rgba(239,83,80,.15);color:#ffb3b3;border:1px solid rgba(239,83,80,.35)}
+    #map{height:100%;width:100%}
+    .pin-hint{position:absolute;top:12px;right:12px;z-index:500;background:rgba(10,14,24,.9);border:1px solid var(--border);padding:8px 12px;border-radius:8px;color:var(--muted);pointer-events:none}
+
+    /* Gate (auth + approval) */
+    #gate{position:fixed;inset:0;background:linear-gradient(180deg,#0d1017,#0f1115);display:grid;place-items:center;z-index:2000}
+    #gate .card{width:min(480px,92%);background:var(--bg-elev);border:1px solid var(--border);border-radius:12px;padding:18px}
+    #gate h2{margin:0 0 6px 0}
+    #gate .muted{color:var(--muted);font-size:14px;margin-bottom:12px}
+    .input{width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#111521;color:var(--fg)}
+    .stack{display:grid;gap:8px}
+    .sep{height:1px;background:var(--border);margin:10px 0}
+    .error{color:#ff9a9a;font-size:13px;min-height:18px}
+    .ok{color:#b2f5d6}
+
+    body.auth #gate{display:none}
+    body:not(.auth) #app{filter:blur(4px);pointer-events:none;user-select:none}
+
+    /* Modal */
+    .modal-backdrop[hidden]{display:none}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;z-index:1000;padding:16px}
+    .modal{width:min(620px,100%);background:var(--bg-elev);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .modal h3{margin:0 0 10px 0}
+    .modal .f{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+    .modal .f label{font-size:13px;color:var(--muted);margin-bottom:6px;display:block}
+    .modal input[type="text"], .modal textarea{width:100%;background:#111521;border:1px solid var(--border);color:var(--fg);padding:10px;border-radius:8px;outline:none;resize:vertical}
+    .modal textarea{min-height:80px;grid-column:1/-1}
+    .type-group{display:flex;gap:12px;align-items:center}
+    .type-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:#101522}
+    .type-pill .dot{width:10px;height:10px;border-radius:999px}
+    .dot.cat{background:var(--cat)} .dot.danger{background:var(--danger)}
+    .photo-prev{grid-column:1/-1;width:100%;max-height:220px;object-fit:cover;border-radius:10px;display:none}
+    .mini-note{grid-column:1/-1;color:var(--muted);font-size:12px}
+
+    /* Marker with optional image */
+    .pin-icon{background:transparent!important;border:0!important}
+    .pin{position:relative;width:46px;height:60px;pointer-events:auto}
+    .pin .bubble{width:46px;height:46px;border-radius:50%;overflow:hidden;background:#0f1422;display:flex;align-items:center;justify-content:center;border:2px solid #4a5a88;box-shadow:0 8px 18px rgba(0,0,0,.45)}
+    .pin .bubble img.thumb{width:100%;height:100%;object-fit:cover;display:block}
+    .pin .bubble .glyph{font-size:22px;line-height:1}
+    .pin .stem{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:14px solid #4a5a88;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))}
+    .pin.cat .bubble{border-color:var(--cat)} .pin.cat .stem{border-top-color:var(--cat)}
+    .pin.danger .bubble{border-color:var(--danger)} .pin.danger .stem{border-top-color:var(--danger)}
+    .leaflet-tooltip.pin-tooltip{background:rgba(12,16,26,.96);color:var(--fg);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,.35)}
+    .tt-title{margin-bottom:4px}.tt-meta{color:var(--muted);font-size:12px;margin-bottom:4px}.tt-desc{font-size:13px;max-width:260px;white-space:normal}
+
+    @media(max-width:960px){#app{grid-template-columns:1fr;grid-template-rows:45vh 55vh}#sidebar{order:2}#map{order:1}}
+    .leaflet-container{background:#0c0f15}
   </style>
 </head>
 <body>
-  <div id="game">
-    <h1>Click Game</h1>
-    <p>Score: <span id="score">0</span></p>
-    <button onclick="increaseScore()">Click Me!</button>
-    <br><br>
-    <input id="playerName" placeholder="Your name" />
-    <button onclick="submitScore()">Submit Score</button>
-
-    <div id="leaderboard">
-      <h2>Leaderboard</h2>
-      <ol id="board"></ol>
+  <!-- Sign-in / Sign-up gate (email/password; approval required) -->
+  <div id="gate">
+    <div class="card">
+      <h2>KAUST Pins</h2>
+      <div class="muted">Sign up with email. You’ll see pins only after approval.</div>
+      <div class="stack">
+        <input id="email" class="input" type="email" placeholder="you@example.com" />
+        <input id="pass" class="input" type="password" placeholder="Password (min 6)" />
+        <div class="row" style="display:flex;gap:8px;justify-content:space-between">
+          <button id="emailSignin">Sign in</button>
+          <button id="emailSignup" class="primary">Request access</button>
+          <button id="resetBtn" style="margin-left:auto">Forgot password?</button>
+        </div>
+        <div id="gateInfo" class="ok"></div>
+        <div id="gateError" class="error"></div>
+      </div>
     </div>
   </div>
 
-  <script>
-    let score = 0;
-    let leaderboard = JSON.parse(localStorage.getItem('leaderboard')) || [];
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <span>KAUST Pins</span>
+        <div>
+          <span id="whoami" class="who"></span>
+          <button id="logoutBtn" style="margin-left:8px">Sign out</button>
+        </div>
+      </div>
 
-    function increaseScore() {
-      score++;
-      document.getElementById("score").innerText = score;
-    }
+      <!-- Admin panel (only visible to admin) -->
+      <div id="adminPanel" style="display:none;border-bottom:1px solid var(--border);padding:12px">
+        <div style="margin-bottom:8px;color:var(--muted)">Registration requests</div>
+        <div id="reqList" style="display:grid;gap:8px"></div>
+      </div>
 
-    function submitScore() {
-      const name = document.getElementById("playerName").value;
-      if (!name) return alert("Please enter your name");
-      leaderboard.push({ name, score });
-      leaderboard.sort((a, b) => b.score - a.score);
-      leaderboard = leaderboard.slice(0, 10); // top 10 only
-      localStorage.setItem('leaderboard', JSON.stringify(leaderboard));
-      renderLeaderboard();
-      score = 0;
-      document.getElementById("score").innerText = score;
-      document.getElementById("playerName").value = '';
-    }
+      <div class="controls">
+        <input id="searchInput" type="text" placeholder="Search a place (e.g., KAUST, Jeddah)" />
+        <button id="searchBtn" title="Find place">Search</button>
+        <div class="row">
+          <button id="toggleAddBtn" class="primary" title="Toggle pin mode">Drop pin mode: off</button>
+          <button id="locateBtn" title="Center on my location">Locate me</button>
+        </div>
+      </div>
 
-    function renderLeaderboard() {
-      const board = document.getElementById("board");
-      board.innerHTML = '';
-      leaderboard.forEach(entry => {
-        const li = document.createElement("li");
-        li.textContent = `${entry.name}: ${entry.score}`;
-        board.appendChild(li);
+      <ul id="locationList"></ul>
+    </aside>
+
+    <main style="position:relative">
+      <div id="map"></div>
+      <div id="pinHint" class="pin-hint" style="display:none">Click on the map to place a pin</div>
+    </main>
+  </div>
+
+  <!-- Add/Edit Pin Modal -->
+  <div id="modalBackdrop" class="modal-backdrop" hidden>
+    <div class="modal">
+      <h3 id="modalTitle">New location</h3>
+      <div class="f">
+        <div>
+          <label for="titleInput">Title</label>
+          <input id="titleInput" type="text" placeholder="Name of this place" />
+        </div>
+        <div>
+          <label for="coordsInput">Coordinates</label>
+          <input id="coordsInput" type="text" readonly />
+        </div>
+        <div>
+          <label>Pin type</label>
+          <div class="type-group">
+            <label class="type-pill"><input type="radio" name="pinType" value="lostcat" checked /> <span class="dot cat"></span> Lost Cat</label>
+            <label class="type-pill"><input type="radio" name="pinType" value="danger" /> <span class="dot danger"></span> Danger</label>
+          </div>
+        </div>
+        <div>
+          <label>Photo (optional)</label>
+          <div class="row" style="gap:6px">
+            <label class="btn" for="photoInput">Upload photo</label>
+            <input id="photoInput" type="file" accept="image/*" />
+            <button id="removePhotoBtn" class="danger" style="display:none">Remove photo</button>
+          </div>
+        </div>
+        <img id="photoPreview" class="photo-prev" alt="Preview" />
+        <div style="grid-column:1/-1">
+          <label for="descInput">Description</label>
+          <textarea id="descInput" placeholder="Notes, directions, etc."></textarea>
+        </div>
+        <div class="mini-note">Photos are auto-cropped to square and compressed.</div>
+      </div>
+      <div class="row">
+        <button id="cancelBtn">Cancel</button>
+        <button id="saveBtn" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase + App -->
+  <script type="module">
+    // ==== Firebase SDKs ====
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import {
+      getAuth, onAuthStateChanged, signOut,
+      createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import {
+      getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+      onSnapshot, query, orderBy, where, writeBatch, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    // ==== YOUR FIREBASE CONFIG ====
+    const firebaseConfig = {
+      apiKey: "PASTE_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      appId: "YOUR_APP_ID"
+    };
+    // ===============================
+
+    const appFB = initializeApp(firebaseConfig);
+    const auth = getAuth(appFB);
+    const db = getFirestore(appFB);
+
+    // ==== Constants / helpers ====
+    const ADMIN_EMAIL = 'lenatif09@gmail.com';
+    const TYPE_LOSTCAT = 'lostcat', TYPE_DANGER = 'danger';
+    const SLOT_IDS = ['s1','s2','s3','s4','s5'];
+    const VIEW_KEY = 'pinboard.mapview.v3';
+
+    const $ = (id)=>document.getElementById(id);
+    const whoami=$('whoami'), logoutBtn=$('logoutBtn');
+    const gate=$('gate'), gateError=$('gateError'), gateInfo=$('gateInfo');
+    const emailInput=$('email'), passInput=$('pass'), emailSignin=$('emailSignin'), emailSignup=$('emailSignup'), resetBtn=$('resetBtn');
+
+    const listEl=$('locationList'), toggleAddBtn=$('toggleAddBtn'), locateBtn=$('locateBtn');
+    const searchInput=$('searchInput'), searchBtn=$('searchBtn'), pinHint=$('pinHint'), adminPanel=$('adminPanel'), reqList=$('reqList');
+
+    const modalBackdrop=$('modalBackdrop'), modalTitle=$('modalTitle'),
+          titleInput=$('titleInput'), descInput=$('descInput'), coordsInput=$('coordsInput'),
+          photoInput=$('photoInput'), photoPreview=$('photoPreview'), removePhotoBtn=$('removePhotoBtn'),
+          cancelBtn=$('cancelBtn'), saveBtn=$('saveBtn');
+
+    const fmt=(n)=>Number(n).toFixed(6);
+    const clampZoom=(z)=>Math.max(1,Math.min(19,z|0));
+    const typeName=(t)=>t===TYPE_DANGER?'Danger':'Lost Cat';
+    const typeClass=(t)=>t===TYPE_DANGER?'danger':'cat';
+    const escapeHtml=(s)=>String(s).replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+
+    // ==== Auth UI ====
+    emailSignup.onclick = async ()=>{
+      gateError.textContent=''; gateInfo.textContent='';
+      const email=emailInput.value.trim(), pass=passInput.value;
+      if(!email || (pass||'').length<6){ gateError.textContent='Enter email and a 6+ char password.'; return; }
+      try{
+        await createUserWithEmailAndPassword(auth,email,pass);
+        // Create a user profile doc on first sign-in if missing
+        const u=auth.currentUser;
+        const uref=doc(db,'users',u.uid);
+        const snap=await getDoc(uref);
+        if(!snap.exists()){
+          await setDoc(uref,{ email:u.email, approved:false, createdAt:serverTimestamp() });
+        }
+        gateInfo.textContent='Request submitted. You’ll get access after approval.';
+        await signOut(auth);
+      }catch{ gateError.textContent='Sign-up failed (account may exist).'; }
+    };
+    emailSignin.onclick = async ()=>{
+      gateError.textContent=''; gateInfo.textContent='';
+      const email=emailInput.value.trim(), pass=passInput.value;
+      if(!email||!pass){ gateError.textContent='Enter email and password.'; return; }
+      try{ await signInWithEmailAndPassword(auth,email,pass); }
+      catch{ gateError.textContent='Sign-in failed. Check email/password.'; }
+    };
+    resetBtn.onclick = async ()=>{
+      gateError.textContent=''; gateInfo.textContent='';
+      const email=emailInput.value.trim();
+      if(!email){ gateError.textContent='Enter your email first.'; return; }
+      try{ await sendPasswordResetEmail(auth,email); gateInfo.textContent='Reset link sent (check inbox).'; }
+      catch{ gateError.textContent='Could not send reset email.'; }
+    };
+    logoutBtn.onclick = ()=> signOut(auth);
+
+    let unsubPins=null, unsubReq=null;
+    onAuthStateChanged(auth, async (user)=>{
+      if(!user){ document.body.classList.remove('auth'); whoami.textContent=''; stopFeeds(); return; }
+      document.body.classList.add('auth');
+      const isAdmin = (user.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase();
+      whoami.textContent = `${user.email}${isAdmin?' • admin':''}`;
+
+      // ensure profile doc exists
+      const uref = doc(db,'users',user.uid);
+      const udoc = await getDoc(uref);
+      if(!udoc.exists()){
+        await setDoc(uref,{ email:user.email, approved:isAdmin?true:false, createdAt:serverTimestamp() });
+      }
+
+      // show admin requests if admin
+      if(isAdmin){ startPendingRequests(); } else { stopPendingRequests(); }
+
+      // gate by approval
+      const approved = isAdmin ? true : ((await getDoc(uref)).data()?.approved===true);
+      if(approved){ startPinsFeed(); } else { stopPinsFeed(); alert('Your account is pending approval.'); signOut(auth); }
+    });
+
+    function stopFeeds(){ stopPinsFeed(); stopPendingRequests(); }
+    function stopPinsFeed(){ if(unsubPins){unsubPins(); unsubPins=null;} clearMarkers(); }
+    function startPinsFeed(){
+      if(unsubPins) return;
+      const qPins = query(collection(db,'pins'), orderBy('createdAt','desc'));
+      unsubPins = onSnapshot(qPins,(snap)=>{
+        const seen = new Set();
+        snap.forEach(d=>{
+          const p={ id:d.id, ...d.data() };
+          seen.add(p.id);
+          upsertLocalPin(p);
+        });
+        // remove stale
+        for(const id of Array.from(state.markers.keys())) if(!seen.has(id)){ removeMarker(id); state.locations = state.locations.filter(x=>x.id!==id); }
+        renderList();
       });
     }
 
-    renderLeaderboard();
+    function startPendingRequests(){
+      adminPanel.style.display='block';
+      if(unsubReq) return;
+      const qReq = query(collection(db,'users'), where('approved','==',false), orderBy('createdAt','asc'));
+      unsubReq = onSnapshot(qReq,(snap)=>{
+        reqList.innerHTML='';
+        if(snap.empty){ reqList.innerHTML='<div style="color:var(--muted)">No pending requests.</div>'; return; }
+        snap.forEach(docu=>{
+          const u=docu.data();
+          const row=document.createElement('div'); row.style.display='grid'; row.style.gridTemplateColumns='1fr auto'; row.style.gap='8px';
+          const left=document.createElement('div'); left.innerHTML=`<div>${escapeHtml(u.email||'')}</div><div class="who">uid: ${docu.id}</div>`;
+          const right=document.createElement('div');
+          const approveBtn=document.createElement('button'); approveBtn.textContent='Approve';
+          approveBtn.onclick = async ()=>{ try{ await updateDoc(doc(db,'users',docu.id), { approved:true }); } catch{ alert('Approve failed.'); } };
+          right.appendChild(approveBtn);
+          row.appendChild(left); row.appendChild(right); reqList.appendChild(row);
+        });
+      });
+    }
+    function stopPendingRequests(){ if(unsubReq){unsubReq();unsubReq=null;} adminPanel.style.display='none'; reqList.innerHTML=''; }
+
+    // ==== Map init (KAUST default) ====
+    const view = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
+    const map = L.map('map', { center: view ? [view.lat, view.lng] : [22.3088,39.1046], zoom: view ? clampZoom(view.zoom) : 15, worldCopyJump:true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap contributors' }).addTo(map);
+    map.on('moveend',()=>{ const c=map.getCenter(); const z=map.getZoom(); localStorage.setItem(VIEW_KEY, JSON.stringify({lat:c.lat,lng:c.lng,zoom:z})); });
+
+    // ==== Local state & UI ====
+    const state = { adding:false, markers:new Map(), locations:[], draftLatLng:null, draftPhoto:null, editingId:null };
+    function setAddMode(on){ state.adding=!!on; $('toggleAddBtn').textContent=`Drop pin mode: ${state.adding?'on':'off'}`; pinHint.style.display = state.adding ? 'block' : 'none'; }
+    toggleAddBtn.onclick = ()=> setAddMode(!state.adding);
+    map.on('click',(e)=>{ if(state.adding) openCreateModal(e.latlng); });
+
+    locateBtn.onclick = ()=>{
+      if(!navigator.geolocation) return alert('Geolocation not supported.');
+      locateBtn.disabled=true; locateBtn.textContent='Locating…';
+      navigator.geolocation.getCurrentPosition((pos)=>{ map.flyTo([pos.coords.latitude,pos.coords.longitude],15,{duration:0.7}); locateBtn.disabled=false; locateBtn.textContent='Locate me'; },
+        ()=>{ alert('Could not get your location.'); locateBtn.disabled=false; locateBtn.textContent='Locate me'; },
+        { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
+    };
+
+    searchBtn.onclick = runSearch;
+    searchInput.onkeydown = (e)=>{ if(e.key==='Enter') runSearch(); };
+    async function runSearch(){
+      const q=searchInput.value.trim(); if(!q) return;
+      searchBtn.disabled=true; searchBtn.textContent='Searching…';
+      try{
+        const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`,{headers:{'Accept':'application/json'}});
+        const data=await res.json();
+        if(Array.isArray(data)&&data.length){ const r=data[0]; map.flyTo([parseFloat(r.lat),parseFloat(r.lon)],14,{duration:0.7}); }
+        else alert('No results found.');
+      }catch{ alert('Search error.'); }
+      finally{ searchBtn.disabled=false; searchBtn.textContent='Search'; }
+    }
+
+    function clearMarkers(){ for(const id of Array.from(state.markers.keys())) removeMarker(id); state.locations=[]; renderList(); }
+    function upsertLocalPin(p){
+      const idx=state.locations.findIndex(x=>x.id===p.id);
+      if(idx===-1) state.locations.push(p); else state.locations[idx]=p;
+      upsertMarker(p);
+    }
+
+    function markerPopupHtml(loc, mineOrAdmin){
+      const img=loc.photo?`<img class="popup-img" src="${loc.photo}" alt="">`:''; 
+      const actions = mineOrAdmin ? `<div style="display:flex;gap:6px"><a href="#" data-action="edit" data-id="${loc.id}">Edit</a><a href="#" data-action="delete" data-id="${loc.id}" style="color:#ff9a9a">Delete</a></div>` : '';
+      return `<div style="min-width:240px">${img}
+        <div style="margin-bottom:6px">${escapeHtml(loc.title||'(untitled)')}</div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:6px">${typeName(loc.type)} · ${fmt(loc.lat)}, ${fmt(loc.lng)}</div>
+        ${loc.description?`<div style="white-space:pre-wrap;margin-bottom:8px">${escapeHtml(loc.description)}</div>`:''}
+        ${actions}</div>`;
+    }
+    function tooltipHtml(loc){
+      const s=(loc.description||'').slice(0,140);
+      return `<div class="tt"><div class="tt-title">${escapeHtml(loc.title||'(untitled)')}</div><div class="tt-meta">${typeName(loc.type)} · ${fmt(loc.lat)}, ${fmt(loc.lng)}</div>${s?`<div class="tt-desc">${escapeHtml(s)}</div>`:''}</div>`;
+    }
+    function makeIcon(loc){
+      const glyph = loc.type===TYPE_DANGER?'⚠️':'🐱';
+      const html = `<div class="pin ${typeClass(loc.type)}"><div class="bubble">${
+        loc.photo ? `<img class="thumb" src="${loc.photo}" alt="">` : `<div class="glyph">${glyph}</div>`
+      }</div><div class="stem"></div></div>`;
+      return L.divIcon({ className:'pin-icon', html, iconSize:[46,60], iconAnchor:[23,58], popupAnchor:[0,-56], tooltipAnchor:[0,-58] });
+    }
+
+    function upsertMarker(loc){
+      const user = auth.currentUser;
+      const mineOrAdmin = user && ((user.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase() || loc.ownerUid===user.uid);
+      let m=state.markers.get(loc.id);
+      if(!m){
+        m=L.marker([loc.lat,loc.lng],{ draggable: mineOrAdmin, icon: makeIcon(loc) });
+        m.bindPopup(markerPopupHtml(loc, mineOrAdmin));
+        m.bindTooltip(tooltipHtml(loc), { direction:'top', offset:[0,-54], className:'pin-tooltip', opacity:0.96 });
+        m.on('dragend', async (e)=>{ if(!mineOrAdmin) return; const {lat,lng}=e.target.getLatLng(); try{ await updateDoc(doc(db,'pins',loc.id), { lat, lng }); } catch{ alert('Update failed.'); } });
+        m.on('popupopen', ()=>{
+          const el=m.getPopup().getElement();
+          el.querySelectorAll('a[data-action]').forEach(a=>{
+            a.addEventListener('click', async (evt)=>{
+              evt.preventDefault();
+              const id=a.getAttribute('data-id'); const act=a.getAttribute('data-action');
+              if(act==='edit') openEditModal(id);
+              if(act==='delete') confirmDelete(id);
+            });
+          });
+        });
+        m.addTo(map); state.markers.set(loc.id,m);
+      }else{
+        m.setLatLng([loc.lat,loc.lng]); m.setIcon(makeIcon(loc));
+        m.setPopupContent(markerPopupHtml(loc, mineOrAdmin));
+        const tt=m.getTooltip(); if(tt) tt.setContent(tooltipHtml(loc));
+        mineOrAdmin ? m.dragging.enable() : m.dragging.disable();
+      }
+    }
+    function removeMarker(id){ const m=state.markers.get(id); if(m){ map.removeLayer(m); state.markers.delete(id); } }
+
+    function renderList(){
+      listEl.innerHTML='';
+      if(!state.locations.length){
+        const li=document.createElement('li'); li.className='loc';
+        li.innerHTML='<div class="title" style="grid-column:1/-1;color:var(--muted)">No locations yet. Toggle “Drop pin mode”, then click the map.</div>';
+        listEl.appendChild(li); return;
+      }
+      const user=auth.currentUser; const isAdmin=(user?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase();
+      for(const loc of state.locations){
+        const li=document.createElement('li'); li.className='loc'; li.dataset.id=loc.id;
+        const title=document.createElement('div'); title.className='title';
+        const ownerTag = (!isAdmin && loc.ownerUid!==user?.uid) ? `<span class="who" style="margin-left:8px">by ${escapeHtml(loc.ownerEmail||'')}</span>` : '';
+        title.innerHTML = `${escapeHtml(loc.title||'(untitled)')} <span class="badge ${typeClass(loc.type)}">${typeName(loc.type)}</span> ${ownerTag}`;
+        const meta=document.createElement('div'); meta.className='meta'; meta.textContent=`${fmt(loc.lat)}, ${fmt(loc.lng)}`;
+        const actions=document.createElement('div'); actions.className='actions';
+        const flyBtn=document.createElement('button'); flyBtn.textContent='View'; flyBtn.onclick=()=>{ map.flyTo([loc.lat,loc.lng],Math.max(map.getZoom(),15),{duration:0.7}); const m=state.markers.get(loc.id); if(m) m.openPopup(); };
+        actions.append(flyBtn);
+        if(isAdmin || loc.ownerUid===user?.uid){
+          const editBtn=document.createElement('button'); editBtn.textContent='Edit'; editBtn.onclick=()=>openEditModal(loc.id);
+          const delBtn=document.createElement('button'); delBtn.textContent='Delete'; delBtn.className='danger'; delBtn.onclick=()=>confirmDelete(loc.id);
+          actions.append(editBtn,delBtn);
+        }
+        li.append(title,actions,meta); listEl.appendChild(li);
+      }
+    }
+
+    function confirmDelete(id){ if(confirm('Delete this pin?')) deletePin(id); }
+
+    // ==== Create / Update / Delete with slot enforcement ====
+    async function pickFreeSlot(uid, type){
+      const slotCol = collection(db, `users/${uid}/quota/${type}/slots`);
+      const snap = await getDocs(slotCol);
+      const used = new Set(); snap.forEach(d=>used.add(d.id));
+      for(const s of SLOT_IDS){ if(!used.has(s)) return s; }
+      return null;
+    }
+
+    async function createPin({title,description,type,lat,lng,photo}){
+      const user=auth.currentUser; if(!user) return;
+      const uid=user.uid; const email=user.email||'';
+      const isAdmin=(email.toLowerCase()===ADMIN_EMAIL.toLowerCase());
+      const pinId = doc(collection(db,'pins')).id; // pre-generate id to reference from slot
+      let slot = null;
+
+      if(!isAdmin){
+        slot = await pickFreeSlot(uid, type);
+        if(!slot){ alert(`Limit reached: 5 ${typeName(type)} pins.`); return; }
+      }
+
+      const batch = writeBatch(db);
+      const pinRef = doc(db,'pins',pinId);
+      const data = { title, description, type, lat, lng, photo: photo||null, ownerUid:uid, ownerEmail:email, createdAt:serverTimestamp(), slot: slot || null };
+      batch.set(pinRef, data);
+
+      if(!isAdmin){
+        const slotRef = doc(db, `users/${uid}/quota/${type}/slots/${slot}`);
+        batch.set(slotRef, { pinId });
+      }
+      await batch.commit();
+    }
+
+    async function updatePin(id, {title,description,lat,lng,photo,type}){
+      const ref=doc(db,'pins',id);
+      const patch = { title, description, lat, lng, photo: photo||null };
+      // Non-admin cannot change type/slot/owner; admin may:
+      if(((auth.currentUser?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase()) && type){
+        patch.type = type; // admin only — rules allow it
+      }
+      await updateDoc(ref, patch);
+    }
+
+    async function deletePin(id){
+      const ref=doc(db,'pins',id);
+      const snap=await getDoc(ref); if(!snap.exists()) return;
+      const p=snap.data();
+      const isAdmin = ((auth.currentUser?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase());
+      if(isAdmin || p.ownerUid===auth.currentUser?.uid){
+        const batch=writeBatch(db);
+        batch.delete(ref);
+        // free slot for owner (even if admin is deleting, keep slots clean)
+        if(p.ownerUid && p.type && p.slot){
+          const slotRef = doc(db, `users/${p.ownerUid}/quota/${p.type}/slots/${p.slot}`);
+          batch.delete(slotRef);
+        }
+        await batch.commit();
+      } else {
+        alert('You can delete only your own pins.');
+      }
+    }
+
+    // ==== Modal + image ====
+    function setPhotoPreview(dataUrl){
+      state.draftPhoto = dataUrl || null;
+      if(state.draftPhoto){ photoPreview.src=state.draftPhoto; photoPreview.style.display='block'; removePhotoBtn.style.display='inline-block'; }
+      else { photoPreview.removeAttribute('src'); photoPreview.style.display='none'; removePhotoBtn.style.display='none'; photoInput.value=''; }
+    }
+    function openCreateModal(latlng){
+      state.editingId=null; state.draftLatLng=latlng; setPhotoPreview(null);
+      modalTitle.textContent='New location'; titleInput.value=''; descInput.value=''; coordsInput.value=`${fmt(latlng.lat)}, ${fmt(latlng.lng)}`;
+      document.querySelector('input[name="pinType"][value="lostcat"]').checked=true;
+      modalBackdrop.hidden=false; setTimeout(()=>titleInput.focus(),0);
+    }
+    function openEditModal(id){
+      const loc = state.locations.find(x=>x.id===id); if(!loc) return;
+      const isAdmin=((auth.currentUser?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase());
+      if(!(isAdmin || loc.ownerUid===auth.currentUser?.uid)) return alert('You can edit only your own pins.');
+      state.editingId=id; state.draftLatLng={lat:loc.lat,lng:loc.lng}; setPhotoPreview(loc.photo||null);
+      modalTitle.textContent='Edit location'; titleInput.value=loc.title||''; descInput.value=loc.description||''; coordsInput.value=`${fmt(loc.lat)}, ${fmt(loc.lng)}`;
+      document.querySelector(`input[name="pinType"][value="${loc.type==='danger'?'danger':'lostcat'}"]`).checked=true;
+      // Non-admin: lock radio buttons (cannot change type/slot)
+      document.querySelectorAll('input[name="pinType"]').forEach(r=>{ r.disabled = !isAdmin; });
+      modalBackdrop.hidden=false; setTimeout(()=>titleInput.focus(),0);
+    }
+    function closeModal(){ modalBackdrop.hidden=true; state.editingId=null; state.draftLatLng=null; setPhotoPreview(null); document.querySelectorAll('input[name="pinType"]').forEach(r=>r.disabled=false); }
+    cancelBtn.onclick = closeModal;
+    modalBackdrop.addEventListener('click',(e)=>{ if(e.target===modalBackdrop) closeModal(); });
+
+    photoInput.onchange = async (e)=>{
+      const f=e.target.files?.[0]; if(!f) return;
+      try{ const dataUrl=await processImage(f,256,'image/jpeg',0.85); setPhotoPreview(dataUrl); }
+      catch{ alert('Could not read the image.'); }
+    };
+    removePhotoBtn.onclick = ()=> setPhotoPreview(null);
+    function processImage(file,size=256,mime='image/jpeg',q=0.85){
+      return new Promise((resolve,reject)=>{
+        const fr=new FileReader();
+        fr.onload=()=>{ const img=new Image(); img.onload=()=>{
+          const s=Math.min(img.width,img.height), sx=(img.width-s)/2, sy=(img.height-s)/2;
+          const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d');
+          g.drawImage(img,sx,sy,s,s,0,0,size,size); resolve(c.toDataURL(mime,q));
+        }; img.onerror=()=>reject(new Error('img')); img.src=fr.result; }; fr.onerror=()=>reject(new Error('file')); fr.readAsDataURL(file);
+      });
+    }
+
+    saveBtn.onclick = async ()=>{
+      const title=titleInput.value.trim()||'(untitled)';
+      const description=descInput.value.trim();
+      if(!state.draftLatLng){ closeModal(); return; }
+      let type=(document.querySelector('input[name="pinType"]:checked')?.value==='danger') ? TYPE_DANGER : TYPE_LOSTCAT;
+      const isAdmin=((auth.currentUser?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase());
+      try{
+        if(state.editingId){
+          await updatePin(state.editingId, { title, description, lat:state.draftLatLng.lat, lng:state.draftLatLng.lng, photo:state.draftPhoto, type: isAdmin?type:undefined });
+        } else {
+          await createPin({ title, description, type, lat:state.draftLatLng.lat, lng:state.draftLatLng.lng, photo:state.draftPhoto });
+        }
+        closeModal();
+      }catch(e){ alert(e?.message || 'Save failed (quota? rules?).'); }
+    };
+
+    // ==== Sidebar wiring ====
+    function renderEmpty(){ listEl.innerHTML='<li class="loc"><div class="title" style="grid-column:1/-1;color:var(--muted)">No locations yet. Toggle “Drop pin mode”, then click the map.</div></li>'; }
+    function renderList(){ if(!state.locations.length) return renderEmpty(); listEl.innerHTML=''; state.locations.forEach(loc=>{
+      const li=document.createElement('li'); li.className='loc'; li.dataset.id=loc.id;
+      const title=document.createElement('div'); title.className='title';
+      const user=auth.currentUser; const isAdmin=(user?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase(); const mine=(loc.ownerUid===user?.uid);
+      const ownerTag = (!isAdmin && !mine) ? `<span class="who" style="margin-left:8px">by ${escapeHtml(loc.ownerEmail||'')}</span>` : '';
+      title.innerHTML = `${escapeHtml(loc.title||'(untitled)')} <span class="badge ${typeClass(loc.type)}">${typeName(loc.type)}</span> ${ownerTag}`;
+      const meta=document.createElement('div'); meta.className='meta'; meta.textContent=`${fmt(loc.lat)}, ${fmt(loc.lng)}`;
+      const actions=document.createElement('div'); actions.className='actions';
+      const flyBtn=document.createElement('button'); flyBtn.textContent='View'; flyBtn.onclick=()=>{ map.flyTo([loc.lat,loc.lng],Math.max(map.getZoom(),15),{duration:0.7}); const m=state.markers.get(loc.id); if(m) m.openPopup(); };
+      actions.append(flyBtn);
+      if(isAdmin || mine){
+        const editBtn=document.createElement('button'); editBtn.textContent='Edit'; editBtn.onclick=()=>openEditModal(loc.id);
+        const delBtn=document.createElement('button'); delBtn.textContent='Delete'; delBtn.className='danger'; delBtn.onclick=()=>confirmDelete(loc.id);
+        actions.append(editBtn,delBtn);
+      }
+      li.append(title,actions,meta); listEl.appendChild(li);
+    }); }
+
+    // ==== Map helpers ====
+    function addMarkerFor(loc){
+      const user=auth.currentUser;
+      const mineOrAdmin = user && ((user.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase() || loc.ownerUid===user.uid);
+      const marker=L.marker([loc.lat,loc.lng],{ draggable:mineOrAdmin, icon:makeIcon(loc) });
+      marker.bindPopup(markerPopupHtml(loc, mineOrAdmin));
+      marker.bindTooltip(tooltipHtml(loc),{direction:'top',offset:[0,-54],className:'pin-tooltip',opacity:0.96});
+      marker.on('dragend', async (e)=>{ if(!mineOrAdmin) return; const {lat,lng}=e.target.getLatLng(); try{ await updateDoc(doc(db,'pins',loc.id), { lat, lng }); } catch{ alert('Update failed.'); }});
+      marker.on('popupopen', ()=>{ const el=marker.getPopup().getElement(); el.querySelectorAll('a[data-action]').forEach(a=>{
+        a.addEventListener('click', (evt)=>{ evt.preventDefault(); const id=a.getAttribute('data-id'); const act=a.getAttribute('data-action'); if(act==='edit') openEditModal(id); if(act==='delete') confirmDelete(id); });
+      });});
+      marker.addTo(map); state.markers.set(loc.id,marker);
+    }
+    function upsertMarker(loc){
+      let m=state.markers.get(loc.id);
+      const user=auth.currentUser; const mineOrAdmin = user && ((user.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase() || loc.ownerUid===user.uid);
+      if(!m){ addMarkerFor(loc); }
+      else{
+        m.setLatLng([loc.lat,loc.lng]); m.setIcon(makeIcon(loc));
+        m.setPopupContent(markerPopupHtml(loc, mineOrAdmin));
+        const tt=m.getTooltip(); if(tt) tt.setContent(tooltipHtml(loc));
+        mineOrAdmin ? m.dragging.enable() : m.dragging.disable();
+      }
+    }
+    function removeMarker(id){ const m=state.markers.get(id); if(m){ map.removeLayer(m); state.markers.delete(id);} }
+
+    // ==== Image helper (reuse) ====
+    function processImage(file,size=256,mime='image/jpeg',q=0.85){
+      return new Promise((resolve,reject)=>{
+        const fr=new FileReader();
+        fr.onload=()=>{ const img=new Image(); img.onload=()=>{
+          const s=Math.min(img.width,img.height), sx=(img.width-s)/2, sy=(img.height-s)/2;
+          const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d');
+          g.drawImage(img,sx,sy,s,s,0,0,size,size); resolve(c.toDataURL(mime,q));
+        }; img.onerror=()=>reject(new Error('img')); img.src=fr.result; }; fr.onerror=()=>reject(new Error('file')); fr.readAsDataURL(file);
+      });
+    }
+
+    setAddMode(false);
   </script>
 </body>
 </html>
