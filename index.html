@@ -578,24 +578,7 @@
 
     // ==== Sidebar wiring ====
     function renderEmpty(){ listEl.innerHTML='<li class="loc"><div class="title" style="grid-column:1/-1;color:var(--muted)">No locations yet. Toggle “Drop pin mode”, then click the map.</div></li>'; }
-    function renderList(){ if(!state.locations.length) return renderEmpty(); listEl.innerHTML=''; state.locations.forEach(loc=>{
-      const li=document.createElement('li'); li.className='loc'; li.dataset.id=loc.id;
-      const title=document.createElement('div'); title.className='title';
-      const user=auth.currentUser; const isAdmin=(user?.email||'').toLowerCase()===ADMIN_EMAIL.toLowerCase(); const mine=(loc.ownerUid===user?.uid);
-      const ownerTag = (!isAdmin && !mine) ? `<span class="who" style="margin-left:8px">by ${escapeHtml(loc.ownerEmail||'')}</span>` : '';
-      title.innerHTML = `${escapeHtml(loc.title||'(untitled)')} <span class="badge ${typeClass(loc.type)}">${typeName(loc.type)}</span> ${ownerTag}`;
-      const meta=document.createElement('div'); meta.className='meta'; meta.textContent=`${fmt(loc.lat)}, ${fmt(loc.lng)}`;
-      const actions=document.createElement('div'); actions.className='actions';
-      const flyBtn=document.createElement('button'); flyBtn.textContent='View'; flyBtn.onclick=()=>{ map.flyTo([loc.lat,loc.lng],Math.max(map.getZoom(),15),{duration:0.7}); const m=state.markers.get(loc.id); if(m) m.openPopup(); };
-      actions.append(flyBtn);
-      if(isAdmin || mine){
-        const editBtn=document.createElement('button'); editBtn.textContent='Edit'; editBtn.onclick=()=>openEditModal(loc.id);
-        const delBtn=document.createElement('button'); delBtn.textContent='Delete'; delBtn.className='danger'; delBtn.onclick=()=>confirmDelete(loc.id);
-        actions.append(editBtn,delBtn);
-      }
-      li.append(title,actions,meta); listEl.appendChild(li);
-    }); }
-
+    
     // ==== Map helpers ====
     function addMarkerFor(loc){
       const user=auth.currentUser;
@@ -638,4 +621,5 @@
   </script>
 </body>
 </html>
+
 
